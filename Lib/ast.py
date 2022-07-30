@@ -60,18 +60,20 @@ def literal_eval(node_or_string):
     if isinstance(node_or_string, Expression):
         node_or_string = node_or_string.body
     def _convert_num(node):
-        if isinstance(node, Constant):
-            if type(node.value) in (int, float, complex):
-                return node.value
-        raise ValueError('malformed node or string: ' + repr(node))
+        if isinstance(node, Constant) and type(node.value) in (
+            int,
+            float,
+            complex,
+        ):
+            return node.value
+        raise ValueError(f'malformed node or string: {repr(node)}')
+
     def _convert_signed_num(node):
         if isinstance(node, UnaryOp) and isinstance(node.op, (UAdd, USub)):
             operand = _convert_num(node.operand)
-            if isinstance(node.op, UAdd):
-                return + operand
-            else:
-                return - operand
+            return + operand if isinstance(node.op, UAdd) else - operand
         return _convert_num(node)
+
     def _convert(node):
         if isinstance(node, Constant):
             return node.value
@@ -88,11 +90,9 @@ def literal_eval(node_or_string):
             left = _convert_signed_num(node.left)
             right = _convert_num(node.right)
             if isinstance(left, (int, float)) and isinstance(right, complex):
-                if isinstance(node.op, Add):
-                    return left + right
-                else:
-                    return left - right
+                return left + right if isinstance(node.op, Add) else left - right
         return _convert_signed_num(node)
+
     return _convert(node_or_string)
 
 
@@ -115,12 +115,12 @@ def dump(node, annotate_fields=True, include_attributes=False):
             ))
             if include_attributes and node._attributes:
                 rv += fields and ', ' or ' '
-                rv += ', '.join('%s=%s' % (a, _format(getattr(node, a)))
-                                for a in node._attributes)
-            return rv + ')'
+                rv += ', '.join(f'{a}={_format(getattr(node, a))}' for a in node._attributes)
+            return f'{rv})'
         elif isinstance(node, list):
-            return '[%s]' % ', '.join(_format(x) for x in node)
+            return f"[{', '.join((_format(x) for x in node))}]"
         return repr(node)
+
     if not isinstance(node, AST):
         raise TypeError('expected AST, got %r' % node.__class__.__name__)
     return _format(node)
@@ -266,13 +266,7 @@ def _splitlines_no_ff(source):
 
 def _pad_whitespace(source):
     """Replace all chars except '\f\t' in a line with spaces."""
-    result = ''
-    for c in source:
-        if c in '\f\t':
-            result += c
-        else:
-            result += ' '
-    return result
+    return ''.join(c if c in '\f\t' else ' ' for c in source)
 
 
 def get_source_segment(source, node, *, padded=False):
@@ -346,7 +340,7 @@ class NodeVisitor(object):
 
     def visit(self, node):
         """Visit a node."""
-        method = 'visit_' + node.__class__.__name__
+        method = f'visit_{node.__class__.__name__}'
         visitor = getattr(self, method, self.generic_visit)
         return visitor(node)
 
@@ -434,20 +428,20 @@ Constant.s = property(_getter, _setter)
 
 class _ABC(type):
 
-    def __instancecheck__(cls, inst):
+    def __instancecheck__(self, inst):
         if not isinstance(inst, Constant):
             return False
-        if cls in _const_types:
+        if self in _const_types:
             try:
                 value = inst.value
             except AttributeError:
                 return False
             else:
-                return (
-                    isinstance(value, _const_types[cls]) and
-                    not isinstance(value, _const_types_not.get(cls, ()))
+                return isinstance(value, _const_types[self]) and not isinstance(
+                    value, _const_types_not.get(self, ())
                 )
-        return type.__instancecheck__(cls, inst)
+
+        return type.__instancecheck__(self, inst)
 
 def _new(cls, *args, **kwargs):
     if cls in _const_types:
